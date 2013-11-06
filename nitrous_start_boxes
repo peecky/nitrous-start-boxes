@@ -1,0 +1,100 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import requests
+import re
+import json
+import ConfigParser
+import os
+import argparse
+import logging
+import sys
+
+BASE_PATH = os.path.dirname(os.path.abspath(__file__)) + '/'
+BASE_NAME = os.path.basename(__file__)
+defaultConfigFilePath = BASE_PATH + BASE_NAME + '.cfg'
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--configfile", help="path of the config file. default: %s" % (defaultConfigFilePath, ), default=defaultConfigFilePath)
+parser.add_argument("--debug", help="debug mode", action="store_true")
+args = parser.parse_args()
+
+if args.debug:
+	logging.basicConfig(level=logging.DEBUG)
+
+config = ConfigParser.SafeConfigParser({
+	'loginId': '',
+	'loginPassword': '',
+})
+config.read(args.configfile)
+
+try:
+	loginId = config.get('userInfo', 'loginId')
+	loginPassword = config.get('userInfo', 'loginPassword')
+except ConfigParser.NoSectionError, e:
+	logging.error("Invaid config file. ( %s ) 'userInfo' section required." % (args.configfile, ))
+	sys.exit(-1)
+
+s = requests.Session()
+r = s.get("https://www.nitrous.io/app")
+m = re.search('<input\s+name="authenticity_token".*?value="(.*?)"\s*\/>', r.content)	# r.text is better but use r.content for the old versions of the Requests Library
+if m and m.lastindex > 0:
+	# need to login
+	authenticity_token = m.group(1)
+	payload = {
+		#'utf8': '&#x2713;',
+		'utf8': u'✓',
+		'authenticity_token': authenticity_token,
+		'user[login]': loginId,
+		'user[password]': loginPassword,
+		'user[remember_me]': "0",
+		#'commit': 'Sign In',
+	}
+	r = s.post("https://www.nitrous.io/users/sign_in", params=payload)
+
+	r = s.get("https://www.nitrous.io/app")
+else:
+	logging.error("cannot find the authenticity_token to sign in")
+	logging.debug(r.content)
+	sys.exit(-1)
+
+# user and boxes info.
+subString1 = "AIO.get('router.applicationController').initialize("
+subString2 = "AIO.get('router.boxesController').loadAll("
+subString3 = "AIO.get('router.publicKeysController').loadAll("
+try:
+	index1 = r.content.index(subString1)
+	index2 = r.content.index(subString2, index1)
+	index3 = r.content.index(subString3, index2)
+	index1_1 = r.content.rindex(");", index1, index2)
+	index2_1 = r.content.rindex(");", index2, index3)
+	jsonString = r.content[index1 + len(subString1):index1_1]
+	userInfo = json.loads(jsonString)["currentUser"]["user"]
+	jsonString = r.content[index2 + len(subString2):index2_1]
+	boxesInfo = json.loads(jsonString)["boxes"]
+except ValueError, e:
+	logging.error("cannot find information of boxes. This can be occurred if your ID or Password are incorrect.")
+	logging.debug(r.content)
+	sys.exit(-1)
+
+# csrf token
+m = re.search('<meta\s+content="(.*?)"\s+name="csrf-token"\s*\/>', r.content)
+if m and m.lastindex > 0:
+	csrfToken = m.group(1)
+else:
+	logging.error("failt to get the csrf-token")
+	logging.debug(r.content)
+	sys.exit(-1)
+
+# start each boxes if it is stopped
+headers = {
+	'X-CSRF-Token': csrfToken
+}
+for boxInfo in boxesInfo:
+	if boxInfo["owner_id"] != userInfo["id"]:
+		continue
+	if boxInfo["state"] != "stopped":
+		continue
+	boxId = boxInfo["id"]
+	r = s.put("https://www.nitrous.io/boxes/%d/start" % (boxId, ), headers=headers)
+	print "send a request to start the box %d" % (boxId, )
