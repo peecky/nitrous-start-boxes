@@ -9,6 +9,7 @@ import os
 import argparse
 import logging
 import sys
+import datetime
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__)) + '/'
 BASE_NAME = os.path.basename(__file__)
@@ -97,4 +98,4 @@ for boxInfo in boxesInfo:
 		continue
 	boxId = boxInfo["id"]
 	r = s.put("https://www.nitrous.io/boxes/%d/start" % (boxId, ), headers=headers)
-	print "send a request to start the box %d" % (boxId, )
+	print "%s send a request to start the box %d" % (datetime.datetime.now(), boxId)
