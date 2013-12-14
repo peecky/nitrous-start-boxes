@@ -125,9 +125,10 @@ except requests.exceptions.ConnectionError, e:
 if cookiesFile:
 	with open(cookiesFile, "wb") as f:
 		try:
-			cookies = requests.utils.dict_from_cookiejar(s.cookies)
+			newCookies = requests.utils.dict_from_cookiejar(s.cookies)
 		except AttributeError, e:
 			# for the old versions of the requests libraries
-			cookies = s.cookies
-		pickle.dump(cookies, f)
+			newCookies = s.cookies
+		if newCookies != cookies:
+			pickle.dump(newCookies, f)
 
